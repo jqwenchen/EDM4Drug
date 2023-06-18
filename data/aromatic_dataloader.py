@@ -92,7 +92,8 @@ class AromaticDataset(Dataset):
         x, node_mask, edge_mask, node_features, y = self.__getitem__(0)[:5]
         self.num_node_features = node_features.shape[1]
         # self.num_targets = y.shape[0]
-        self.num_targets = args.num_target
+        if hasattr(args, "num_target"):
+            self.num_targets = args.num_target
 
     def get_edge_mask_orientation(self):
         if self._edge_mask_orientation is None:
@@ -269,10 +270,8 @@ def get_paths(args):
         csv_path = "/home/tomerweiss/PBHs-design/data/peri-xtb-data-55821.csv"
         xyz_path = "/home/tomerweiss/PBHs-design/data/peri-cata-89893-xyz"
     elif args.dataset == "hetro":
-        # csv_path = "/home/tomerweiss/PBHs-design/data/db-474K-OPV-phase-2-filtered.csv"
-        # xyz_path = "/home/tomerweiss/PBHs-design/data/db-474K-xyz"
-        csv_path = "/home/p1/Desktop/data/connect2.xlsx"
-        xyz_path = "/home/p1/Desktop/data/xyz"
+        csv_path = "/home/jck/Desktop/data/connect2.xlsx"
+        xyz_path = "/home/jck/Desktop/data/xyz"
     elif args.dataset == "hetro-dft":
         csv_path = "/home/tomerweiss/PBHs-design/data/db-15067-dft.csv"
         xyz_path = ""
@@ -296,7 +295,6 @@ def get_splits(args, random_seed=42, val_frac=0.1, test_frac=0.1):
     elif csv_path.endswith("xlsx"):
         df = pd.read_excel(csv_path)
     else:
-        # df = pd.read_excel(csv_path)
         df = pd.read_csv(csv_path)
 
     df_all = df.copy()
