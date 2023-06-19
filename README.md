@@ -2,5 +2,5 @@
 Guided Equivariant Diffusion Model for Drug Design
 
 ## Data
-
-https://drive.google.com/drive/u/0/folders/1AGO7SJywOJlLgxI7m4Gk_2MvMAUkLdre
+### Download from the below link
+https://drive.google.com/drive/folders/1hUjrfUatw2owzfTjetasX5oq6V_n1MaQ
