@@ -1,5 +1,5 @@
 # EDM4Drug
-Guided Equivariant Diffusion Model for Drug Design
+Classifier Guided Equivariant Diffusion Model for Drug Design
 
 ## Data
 ### Download from the below link
