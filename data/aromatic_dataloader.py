@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 from time import time
 from typing import Tuple
+from rdkit import Chem
+
+from torch_geometric.data import Data
 
 import networkx as nx
 import numpy as np
@@ -11,6 +14,7 @@ import torch
 import pandas as pd
 from torch import zeros, Tensor
 from torch.utils.data import Dataset, DataLoader
+# from torch_geometric.data import DataLoader
 from torch.nn.functional import one_hot
 from tqdm import tqdm
 
@@ -19,6 +23,7 @@ from data.ring import RINGS_DICT
 from utils.args_edm import Args_EDM
 from utils.ring_graph import get_rings, get_rings_adj
 from utils.molgraph import get_connectivity_matrix, get_edges
+from torch_geometric.data import Batch, Data
 
 DTYPE = torch.float32
 INT_DTYPE = torch.int8
@@ -34,6 +39,86 @@ RINGS_LIST = {
     "hetro": list(RINGS_DICT.keys()) + ["."],
 }
 
+
+
+
+
+allowable_features = {
+    'possible_atomic_num_list':       list(range(1, 119)),
+    'possible_formal_charge_list':    [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5],
+    'possible_chirality_list':        [
+        Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
+        Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW,
+        Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW,
+        Chem.rdchem.ChiralType.CHI_OTHER
+    ],
+    'possible_hybridization_list':    [
+        Chem.rdchem.HybridizationType.S,
+        Chem.rdchem.HybridizationType.SP,
+        Chem.rdchem.HybridizationType.SP2,
+        Chem.rdchem.HybridizationType.SP3,
+        Chem.rdchem.HybridizationType.SP3D,
+        Chem.rdchem.HybridizationType.SP3D2,
+        Chem.rdchem.HybridizationType.UNSPECIFIED
+    ],
+    'possible_numH_list':             [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    'possible_implicit_valence_list': [0, 1, 2, 3, 4, 5, 6],
+    'possible_degree_list':           [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    'possible_bonds':                 [
+        Chem.rdchem.BondType.SINGLE,
+        Chem.rdchem.BondType.DOUBLE,
+        Chem.rdchem.BondType.TRIPLE,
+        Chem.rdchem.BondType.AROMATIC
+    ],
+    'possible_bond_dirs':             [  # only for double bond stereo information
+        Chem.rdchem.BondDir.NONE,
+        Chem.rdchem.BondDir.ENDUPRIGHT,
+        Chem.rdchem.BondDir.ENDDOWNRIGHT
+    ]
+}
+
+def mol_to_graph_data_obj_simple_3D(smile):
+    """
+    Converts rdkit mol object to graph Data object required by the pytorch
+    geometric package. NB: Uses simplified atom and bond features, and represent as indices
+    :param mol: rdkit mol object
+    return: graph data object with the attributes: x, edge_index, edge_attr """
+    mol = Chem.MolFromSmiles(smile)
+
+    atom_features_list = []
+    for atom in mol.GetAtoms():
+        atom_feature = [allowable_features['possible_atomic_num_list'].index(atom.GetAtomicNum())] + \
+                       [allowable_features['possible_chirality_list'].index(atom.GetChiralTag())]
+        atom_features_list.append(atom_feature)
+    x = torch.tensor(np.array(atom_features_list), dtype=torch.long)
+
+    # bonds, two features: bond type, bond direction
+    if len(mol.GetBonds()) > 0:  # mol has bonds
+        edges_list = []
+        edge_features_list = []
+        for bond in mol.GetBonds():
+            i = bond.GetBeginAtomIdx()
+            j = bond.GetEndAtomIdx()
+            edge_feature = [allowable_features['possible_bonds'].index(bond.GetBondType())] + \
+                           [allowable_features['possible_bond_dirs'].index(bond.GetBondDir())]
+            edges_list.append((i, j))
+            edge_features_list.append(edge_feature)
+            edges_list.append((j, i))
+            edge_features_list.append(edge_feature)
+
+        # data.edge_index: Graph connectivity in COO format with shape [2, num_edges]
+        edge_index = torch.tensor(np.array(edges_list).T, dtype=torch.long)
+
+        # data.edge_attr: Edge feature matrix with shape [num_edges, num_edge_features]
+        edge_attr = torch.tensor(np.array(edge_features_list), dtype=torch.long)
+
+    else:  # mol has no bonds
+        num_bond_features = 2
+        edge_index = torch.empty((2, 0), dtype=torch.long)
+        edge_attr = torch.empty((0, num_bond_features), dtype=torch.long)
+    data = Data(x=x, edge_index=edge_index,
+                edge_attr=edge_attr)
+    return data
 
 class RandomRotation(object):
     def __call__(self, x):
@@ -248,10 +333,11 @@ class AromaticDataset(Dataset):
                 adj_full = zeros(self.max_nodes, self.max_nodes)
                 adj_full[:n_nodes, :n_nodes] = adj
 
+        smile_mol = mol_to_graph_data_obj_simple_3D(df_row["smiles"])
         if self.return_adj:
-            return x_full, node_mask, edge_mask, node_features_full, adj_full, y
+            return x_full, node_mask, edge_mask, node_features_full, adj_full, y, smile_mol
         else:
-            return x_full, node_mask, edge_mask, node_features_full, y
+            return x_full, node_mask, edge_mask, node_features_full, y, smile_mol
 
     def __getitem__(self, idx):
         index = self.examples[idx]
@@ -270,8 +356,12 @@ def get_paths(args):
         csv_path = "/home/tomerweiss/PBHs-design/data/peri-xtb-data-55821.csv"
         xyz_path = "/home/tomerweiss/PBHs-design/data/peri-cata-89893-xyz"
     elif args.dataset == "hetro":
-        csv_path = "/home/jck/Desktop/data/connect2.xlsx"
-        xyz_path = "/home/jck/Desktop/data/xyz"
+        # csv_path = "/home/tomerweiss/PBHs-design/data/db-474K-OPV-phase-2-filtered.csv"
+        # xyz_path = "/home/tomerweiss/PBHs-design/data/db-474K-xyz"
+        # csv_path = "/home/p1/Desktop/data/connect2.xlsx"
+        # xyz_path = "/home/p1/Desktop/data/xyz"
+        csv_path = "/home/p1/Desktop/0615_L1700_Compound Library/connect2.xlsx"
+        xyz_path = "/home/p1/Desktop/0615_L1700_Compound Library/xyz"
     elif args.dataset == "hetro-dft":
         csv_path = "/home/tomerweiss/PBHs-design/data/db-15067-dft.csv"
         xyz_path = ""
@@ -304,6 +394,21 @@ def get_splits(args, random_seed=42, val_frac=0.1, test_frac=0.1):
     df_train = df.drop(df_val.index)
     return df_train, df_val, df_test, df_all
 
+def collate_fn(batch):
+    x, node_mask, edge_mask, node_features, y, smiles = [], [], [], [], [], []
+    for item in batch:
+        x.append(item[0].unsqueeze(0))
+        node_mask.append(item[1].unsqueeze(0))
+        edge_mask.append(item[2].unsqueeze(0))
+        node_features.append(item[3].unsqueeze(0))
+        y.append(item[4].unsqueeze(0))
+        smiles.append(item[5])
+    x = torch.cat(x, dim=0)
+    node_mask = torch.cat(node_mask, dim=0)
+    edge_mask = torch.cat(edge_mask, dim=0)
+    node_features = torch.cat(node_features, dim=0)
+    y = torch.cat(y, dim=0)
+    return x, node_mask, edge_mask, node_features, y, Batch.from_data_list(smiles, [], [])
 
 def create_data_loaders(args):
     args.df_train, args.df_val, args.df_test, args.df_all = get_splits(args)
@@ -326,6 +431,7 @@ def create_data_loaders(args):
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
+        collate_fn=collate_fn,
     )
 
     val_loader = DataLoader(
@@ -334,6 +440,7 @@ def create_data_loaders(args):
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
+        collate_fn=collate_fn,
     )
 
     test_loader = DataLoader(
@@ -342,5 +449,6 @@ def create_data_loaders(args):
         shuffle=False,
         num_workers=args.num_workers,
         pin_memory=True,
+        collate_fn=collate_fn,
     )
     return train_loader, val_loader, test_loader

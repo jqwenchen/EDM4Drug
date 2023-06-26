@@ -12,6 +12,7 @@ class PredictionArgs(argparse.ArgumentParser):
         self.add_argument("--rings_graph", type=bool, default=True)
         self.add_argument("--max-nodes", default=11, type=str)
         self.add_argument("--num_target", default=166, type=int)
+        self.add_argument("--pretrain_path", default='', type=str)
         # task param
         self.add_argument(
             "--target_features",

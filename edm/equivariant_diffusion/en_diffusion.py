@@ -1,4 +1,5 @@
 from time import time
+from molecule_gnn_model import GNN, GNN_graphpred
 
 from torch import log, sqrt, autograd
 from torch.autograd.functional import jacobian
@@ -294,8 +295,17 @@ class EnVariationalDiffusion(torch.nn.Module):
         norm_biases=(None, 0.0, 0.0),
         include_charges=True,
         device="cpu",
+            pretrain_path=None
     ):
         super().__init__()
+
+        molecule_model = GNN(num_layer=5, emb_dim=300,
+                             JK="last", drop_ratio=0.5,
+                             gnn_type="gin")
+        self.pretrain_model = GNN_graphpred(num_layer=5, emb_dim=300, JK="last", graph_pooling="mean", num_tasks=66,
+                              molecule_model=molecule_model)
+        if pretrain_path:
+            self.pretrain_model.from_pretrained(pretrain_path)
 
         assert loss_type in {"vlb", "l2"}
         self.loss_type = loss_type
@@ -773,12 +783,15 @@ class EnVariationalDiffusion(torch.nn.Module):
             "error": error.squeeze(),
         }
 
-    def forward(self, x, h, node_mask=None, edge_mask=None, context=None):
+    def forward(self, x, h, node_mask=None, edge_mask=None, context=None, smiles=None):
         """
         Computes the loss (type l2 or NLL) if training. And if eval then always computes NLL.
         """
         # Normalize data, take into account volume change in x.
         x, h, delta_log_px = self.normalize(x, h, node_mask)
+        if smiles:
+            pre_train_out = self.pretrain_model(smiles.x, smiles.edge_index, smiles.edge_attr, smiles.batch)
+            x = x + pre_train_out.view(*x.shape)
 
         # Reset delta_log_px if not vlb objective.
         if self.training and self.loss_type == "l2":

@@ -146,8 +146,10 @@ def get_paths(args):
     elif args.dataset == "hetro":
         # csv_path = "/home/tomerweiss/PBHs-design/data/db-474K-OPV-phase-2-filtered.csv"
         # xyz_path = "/home/tomerweiss/PBHs-design/data/db-474K-xyz"
-        csv_path = "/home/p1/Desktop/data/connect.xlsx"
-        xyz_path = "/home/p1/Desktop/data/xyz"
+        # csv_path = "/home/p1/Desktop/data/connect.xlsx"
+        # xyz_path = "/home/p1/Desktop/data/xyz"
+        csv_path = "/home/p1/Desktop/0615_L1700_Compound Library/信息对应表.xlsx"
+        xyz_path = "/home/p1/Desktop/0615_L1700_Compound Library/xyz"
     elif args.dataset == "hetro-dft":
         csv_path = "/home/tomerweiss/PBHs-design/data/db-15067-dft.csv"
         xyz_path = ""
@@ -188,7 +190,7 @@ if __name__ == '__main__':
     pbar =tqdm(total=args.df_train.shape[0])
 
     args.df_train["n_rings"] = args.df_train.apply(dataset.get_rings_num, axis=1, args=(pbar, ))
-    args.df_train.to_excel("/home/p1/Desktop/data/connect1.xlsx", index=False)
+    args.df_train.to_excel("/home/p1/Desktop/0615_L1700_Compound Library/connect1.xlsx", index=False)
     from data.ring import RINGS_DICT
     print(RINGS_DICT)
 

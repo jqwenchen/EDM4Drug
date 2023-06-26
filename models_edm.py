@@ -93,6 +93,7 @@ def get_model(args, dataloader_train):
         norm_values=args.normalize_factors,
         include_charges=False,
         device=args.device,
+        pretrain_path=args.pretrain_path,
     )
 
     if args.dp:  # and torch.cuda.device_count() > 1:

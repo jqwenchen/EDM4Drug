@@ -4,6 +4,7 @@ import numpy as np
 
 from edm.egnn_predictor.gcl import E_GCL, GCL
 from edm.equivariant_diffusion.utils import remove_mean, remove_mean_with_mask
+from edm.equivariant_diffusion.en_diffusion import GNN_graphpred, GNN as GNN_pretrain
 
 
 class EGNN_dynamics(nn.Module):
@@ -405,6 +406,7 @@ class EGNN_predictor(nn.Module):
         condition_time=False,
         d=3,
         coords_range=15,
+            pretrain_path=None,
     ):
         super().__init__()
         self.d = d
@@ -424,6 +426,13 @@ class EGNN_predictor(nn.Module):
             agg=agg,
             coords_range=coords_range,
         )
+        molecule_model = GNN_pretrain(num_layer=5, emb_dim=300,
+                             JK="last", drop_ratio=0.5,
+                             gnn_type="gin")
+        self.pretrain_model = GNN_graphpred(num_layer=5, emb_dim=300, JK="last", graph_pooling="mean", num_tasks=66,
+                                            molecule_model=molecule_model)
+        if pretrain_path:
+            self.pretrain_model.from_pretrained(pretrain_path)
         self.mean = mean.to(device) if mean is not None else None
         self.std = std.to(device) if std is not None else None
         self.device = device
@@ -431,7 +440,7 @@ class EGNN_predictor(nn.Module):
         self.condition_time = condition_time
         # self.sigmoid = nn.Sigmoid()
 
-    def forward(self, xh, node_mask, edge_mask, t=torch.zeros(1)):
+    def forward(self, xh, node_mask, edge_mask, t=torch.zeros(1), smiles=None):
         bs, n_nodes, dims = xh.shape
         edges = self.get_adj_matrix(n_nodes, bs, self.device)
         edges = [e.to(xh.device) for e in edges]
@@ -449,7 +458,9 @@ class EGNN_predictor(nn.Module):
                 h_time = t.view(bs, 1).repeat(1, n_nodes)
                 h_time = h_time.view(bs * n_nodes, 1)
             h = torch.cat([h, h_time], dim=1)
-
+        if smiles:
+            pre_train_out = self.pretrain_model(smiles.x, smiles.edge_index, smiles.edge_attr, smiles.batch)
+            x = x + pre_train_out.view(*x.shape)
         edge_attr = torch.sum((x[edges[0]] - x[edges[1]]) ** 2, dim=1, keepdim=True)
         h_final, _ = self.egnn(
             h, x, edges, node_mask=node_mask, edge_mask=edge_mask, edge_attr=edge_attr

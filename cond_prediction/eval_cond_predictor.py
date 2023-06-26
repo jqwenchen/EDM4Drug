@@ -38,7 +38,8 @@ def val_epoch(tag, cond_predictor, edm_model, dataloader, args, edm_args, t_fix=
         rl_loss = []
         error_list = []
         # with tqdm(dataloader, unit="batch", desc=f"{tag} {epoch}") as tepoch:
-        for i, (x, node_mask, edge_mask, node_features, y) in enumerate(dataloader):
+        for i, (x, node_mask, edge_mask, node_features, y, smiles) in enumerate(dataloader):
+            smiles = smiles.to(args.device)
             x = x.to(args.device)
             y = y.to(args.device)
             node_mask = node_mask.to(args.device).unsqueeze(2)
@@ -59,6 +60,7 @@ def val_epoch(tag, cond_predictor, edm_model, dataloader, args, edm_args, t_fix=
                 edm_model,
                 edm_args,
                 t_fix,
+                smiles=smiles
             )
             error_list.append(err)
             loss_list.append(loss.item())

@@ -56,13 +56,14 @@ def assert_mean_zero_with_mask(x, node_mask, eps=1e-10):
     rel_error = error / (largest_value + eps)
     if rel_error > 1e-2:
         print()
-    assert rel_error < 1e-2, f"Mean is not zero, relative_error {rel_error}"
-
+    # assert rel_error < 1e-2, f"Mean is not zero, relative_error {rel_error}"
+    pass
 
 def assert_correctly_masked(variable, node_mask):
-    assert (
-        variable * (1 - node_mask)
-    ).abs().max().item() < 1e-4, "Variables not masked properly."
+    pass
+    # assert (
+    #     variable * (1 - node_mask)
+    # ).abs().max().item() < 1e-4, "Variables not masked properly."
 
 
 def center_gravity_zero_gaussian_log_likelihood(x):

@@ -62,7 +62,7 @@ def sample_edm_t(x, h, edm_model, t, node_mask):
 
 
 def compute_loss(
-    model, x, h, node_mask, edge_mask, target, edm_model, edm_args, t_fix=None
+    model, x, h, node_mask, edge_mask, target, edm_model, edm_args, t_fix=None, smiles=None
 ) -> Tensor:
     T = edm_args.diffusion_steps
     if t_fix is None:
@@ -76,7 +76,7 @@ def compute_loss(
     bs, n_nodes, n_dims = x.size()
     assert_correctly_masked(x, node_mask)
     edge_mask = edge_mask.view(bs, n_nodes * n_nodes)
-    pred = model(z_t, node_mask, edge_mask, t)
+    pred = model(z_t, node_mask, edge_mask, t, smiles=smiles)
     loss = cross_entropy(pred, torch.squeeze(target).long())
     # loss = l1_loss(pred, target)
     return loss, loss.detach()#, (pred - target).abs().detach()
@@ -91,7 +91,8 @@ def train_epoch(
     loss_list = []
     rl_loss = []
     with tqdm(dataloader, unit="batch", desc=f"Train {epoch}") as tepoch:
-        for i, (x, node_mask, edge_mask, node_features, y) in enumerate(tepoch):
+        for i, (x, node_mask, edge_mask, node_features, y, smiles) in enumerate(tepoch):
+            smiles = smiles.to(args.device)
             x = x.to(args.device)
             y = y.to(args.device)
             node_mask = node_mask.to(args.device).unsqueeze(2)
@@ -103,7 +104,7 @@ def train_epoch(
             assert_mean_zero_with_mask(x, node_mask)
 
             loss, _ = compute_loss(
-                cond_predictor, x, h, node_mask, edge_mask, y, edm_model, edm_args
+                cond_predictor, x, h, node_mask, edge_mask, y, edm_model, edm_args, smiles=smiles
             )
 
             # backprop
@@ -142,7 +143,8 @@ def val_epoch(
         loss_list = []
         rl_loss = []
         # with tqdm(dataloader, unit="batch", desc=f"{tag} {epoch}") as tepoch:
-        for i, (x, node_mask, edge_mask, node_features, y) in enumerate(dataloader):
+        for i, (x, node_mask, edge_mask, node_features, y, smiles) in enumerate(dataloader):
+            smiles = smiles.to(args.device)
             x = x.to(args.device)
             y = y.to(args.device)
             node_mask = node_mask.to(args.device).unsqueeze(2)
@@ -163,6 +165,7 @@ def val_epoch(
                 edm_model,
                 edm_args,
                 t_fix,
+                smiles=smiles,
             )
 
             loss_list.append(loss.item())

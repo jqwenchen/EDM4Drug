@@ -31,16 +31,16 @@ def check_mask_correct(variables, node_mask):
     for variable in variables:
         if variable.shape[-1] != 0:
             assert_correctly_masked(variable, node_mask)
+            pass
 
-
-def compute_loss(model, x, h, node_mask, edge_mask):
+def compute_loss(model, x, h, node_mask, edge_mask, smiles):
     bs, n_nodes, n_dims = x.size()
     assert_correctly_masked(x, node_mask)
     edge_mask = edge_mask.view(bs, n_nodes * n_nodes)
 
     h = {"categorical": h, "integer": torch.zeros(0).to(x.device)}
 
-    loss = model(x, h, node_mask, edge_mask)
+    loss = model(x, h, node_mask, edge_mask, smiles=smiles)
 
     # Average over batch.
     loss = loss.mean(0)
@@ -55,7 +55,8 @@ def train_epoch(epoch, model, dataloader, optimizer, args, writer, gradnorm_queu
     losses = []
     grad_norms = []
     with tqdm(dataloader, unit="batch", desc=f"Train {epoch}") as tepoch:
-        for i, (x, node_mask, edge_mask, node_features, y) in enumerate(tepoch):
+        for i, (x, node_mask, edge_mask, node_features, y, smiles) in enumerate(tepoch):
+            smiles = smiles.to(args.device)
             x = x.to(args.device)
             node_mask = node_mask.to(args.device).unsqueeze(2)
             edge_mask = edge_mask.to(args.device)
@@ -65,7 +66,7 @@ def train_epoch(epoch, model, dataloader, optimizer, args, writer, gradnorm_queu
             check_mask_correct([x, h], node_mask)
             assert_mean_zero_with_mask(x, node_mask)
 
-            loss = compute_loss(model, x, h, node_mask, edge_mask)
+            loss = compute_loss(model, x, h, node_mask, edge_mask, smiles)
 
             # backprop
             optimizer.zero_grad()
@@ -95,7 +96,8 @@ def val_epoch(tag, epoch, model, nodes_dist, prop_dist, dataloader, args, writer
         start_time = time()
         losses = []
         with tqdm(dataloader, unit="batch", desc=f"{tag} {epoch}") as tepoch:
-            for i, (x, node_mask, edge_mask, node_features, y) in enumerate(tepoch):
+            for i, (x, node_mask, edge_mask, node_features, y, smiles) in enumerate(tepoch):
+                smiles = smiles.to(args.device)
                 x = x.to(args.device)
                 node_mask = node_mask.to(args.device).unsqueeze(2)
                 edge_mask = edge_mask.to(args.device)
@@ -106,7 +108,7 @@ def val_epoch(tag, epoch, model, nodes_dist, prop_dist, dataloader, args, writer
                 assert_mean_zero_with_mask(x, node_mask)
 
                 # transform batch through flow
-                nll = compute_loss(model, x, h, node_mask, edge_mask)
+                nll = compute_loss(model, x, h, node_mask, edge_mask, smiles)
 
                 losses.append(nll.item())
 
@@ -154,6 +156,7 @@ def main(args):
     print("Begin training")
     best_val_loss = 1e9
     best_epoch = 0
+    val_loss_all = []
     for epoch in range(args.num_epochs):
         train_epoch(
             epoch,
@@ -164,6 +167,7 @@ def main(args):
             writer,
             gradnorm_queue,
         )
+
         val_loss = val_epoch(
             "val", epoch, model, nodes_dist, prop_dist, val_loader, args, writer
         )
@@ -171,6 +175,17 @@ def main(args):
             best_val_loss = val_loss
             best_epoch = epoch
             torch.save(model.state_dict(), args.exp_dir + "/model.pt")
+
+        val_loss_all.append(val_loss)
+
+    import matplotlib.pyplot as plt
+
+    plt.plot(val_loss_all)
+    plt.title("validation loss")
+    plt.xlabel("epochs")
+    plt.ylabel("Loss")
+    plt.show()
+
 
     print(f"{best_epoch=}, {best_val_loss=:.4f}")
     model.load_state_dict(torch.load(args.exp_dir + "/model.pt"))
